@@ -7,7 +7,7 @@ from meal_max.models.kitchen_model import (
     get_meal_by_id,
     get_meal_by_name,
     update_meal_stats
-)
+    )
 from meal_max.utils.sql_utils import get_db_connection
 from meal_max.models.kitchen_model import Meal
 import sqlite3
@@ -15,23 +15,31 @@ import sqlite3
 class TestKitchenModel(unittest.TestCase):
     @mock.patch('meal_max.models.kitchen_model.get_db_connection')
     def test_create_meal_valid(self, mock_get_db_connection):
-        # Mocking the cursor and database connection
+        # Set up a mock cursor and connection
         mock_cursor = mock.Mock()
         mock_get_db_connection.return_value.__enter__.return_value.cursor.return_value = mock_cursor
         
-        # Create a valid meal
+        # Call the function to create a meal
         create_meal("Pizza", "Italian", 15.0, "LOW")
         
-        # Normalize expected and actual SQL strings to ignore extra spaces or line breaks
+        # Expected SQL and parameters
         expected_query = "INSERT INTO meals (meal, cuisine, price, difficulty) VALUES (?, ?, ?, ?)"
-        actual_query = mock_cursor.execute.call_args[0][0].strip().replace('\n', ' ').replace('\r', ' ').strip()
+        expected_params = ("Pizza", "Italian", 15.0, "LOW")
 
-        # Ensure that execute was called once with the expected SQL query and parameters
-        self.assertEqual(actual_query, expected_query)
-        mock_cursor.execute.assert_called_once_with(
-            expected_query,
-            ("Pizza", "Italian", 15.0, "LOW")
-        )
+        # Retrieve actual SQL call and parameters
+        actual_query = mock_cursor.execute.call_args[0][0]
+        actual_params = mock_cursor.execute.call_args[0][1]
+
+        # Debugging output to check the exact values
+        print("Expected Query:", expected_query)
+        print("Actual Query:", actual_query)
+        print("Expected Parameters:", expected_params)
+        print("Actual Parameters:", actual_params)
+
+        # Normalize the queries and compare
+        self.assertEqual(" ".join(expected_query.split()), " ".join(actual_query.split()))
+        self.assertEqual(expected_params, actual_params)
+
 
     @mock.patch('meal_max.models.kitchen_model.get_db_connection')
     def test_create_meal_invalid_difficulty(self, mock_get_db_connection):
@@ -69,7 +77,7 @@ class TestKitchenModel(unittest.TestCase):
             delete_meal(1)
         
     @mock.patch('meal_max.models.kitchen_model.get_db_connection')
-    def test_get_leaderboard(self, mock_get_db_connection):
+    def test_get_leaderboard_single_entry(self, mock_get_db_connection):
         # Mocking the cursor to return a fake leaderboard
         mock_cursor = mock.Mock()
         mock_get_db_connection.return_value.__enter__.return_value.cursor.return_value = mock_cursor
@@ -159,6 +167,55 @@ class TestKitchenModel(unittest.TestCase):
         # Test for invalid result in update stats
         with self.assertRaises(ValueError):
             update_meal_stats(1, "invalid_result")
+    
+    @mock.patch('meal_max.models.kitchen_model.get_db_connection')
+    def test_get_leaderboard_multiple_entries(self, mock_get_db_connection):
+        # Mocking the database cursor and sample data
+        mock_cursor = mock.Mock()
+        mock_get_db_connection.return_value.__enter__.return_value.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [
+            (1, "Pizza", "Italian", 15.0, "LOW", 10, 6, 0.6),
+            (2, "Burger", "American", 12.0, "MED", 8, 4, 0.5)
+        ]
+        
+        # Call get_leaderboard and check results
+        leaderboard = get_leaderboard(sort_by="wins")
+        
+        # Expected SQL query
+        expected_query = """
+            SELECT id, meal, cuisine, price, difficulty, battles, wins, (wins * 1.0 / battles) AS win_pct 
+            FROM meals WHERE deleted = false AND battles > 0 ORDER BY wins DESC
+        """
+        
+        # Normalize SQL queries by removing extra whitespace and line breaks
+        actual_query = mock_cursor.execute.call_args[0][0]
+        self.assertEqual(" ".join(expected_query.split()), " ".join(actual_query.split()))
+
+        # Verify returned leaderboard data
+        self.assertEqual(len(leaderboard), 2)
+        self.assertEqual(leaderboard[0]['meal'], "Pizza")
+        self.assertEqual(leaderboard[0]['wins'], 6)
+
+
+    @mock.patch('meal_max.models.kitchen_model.get_db_connection')
+    def test_update_meal_stats(self, mock_get_db_connection):
+        # Mocking the cursor for a meal that exists and is not deleted
+        mock_cursor = mock.Mock()
+        mock_get_db_connection.return_value.__enter__.return_value.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = (False,)  # Meal is not deleted
+        
+        # Call update_meal_stats with a win
+        update_meal_stats(1, "win")
+        
+        # Verify that the update query for a win was executed
+        mock_cursor.execute.assert_any_call("UPDATE meals SET battles = battles + 1, wins = wins + 1 WHERE id = ?", (1,))
+        
+        # Call update_meal_stats with a loss
+        update_meal_stats(1, "loss")
+        
+        # Verify that the update query for a loss was executed
+        mock_cursor.execute.assert_any_call("UPDATE meals SET battles = battles + 1 WHERE id = ?", (1,))
 
 if __name__ == '__main__':
     unittest.main()
+
