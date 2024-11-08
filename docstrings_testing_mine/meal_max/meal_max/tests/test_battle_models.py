@@ -9,7 +9,7 @@ DATABASE_PATH = os.path.abspath("db/meal_max.db")
 
 @pytest.fixture
 def battle_model():
-    """Fixture to provide a new instance of BattleModel for each test."""
+    """Fixture to provide a new instance of BattleModel for each test. """
     return BattleModel()
 
 @pytest.fixture
