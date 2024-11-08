@@ -1,11 +1,10 @@
 import pytest
+from unittest import mock
 from meal_max.models.kitchen_model import Meal
 from meal_max.models.battle_model import BattleModel
 
 import os
 DATABASE_PATH = os.path.abspath("db/meal_max.db")
-
-
 
 
 @pytest.fixture
@@ -89,20 +88,29 @@ def test_battle_clear_combatants(battle_model, sample_meal1, sample_meal2, mocke
 
     # After the battle, only one combatant should remain
     assert len(battle_model.get_combatants()) == 1
+    
+    
+@mock.patch('meal_max.models.kitchen_model.update_meal_stats', autospec=True)
+@mock.patch('meal_max.models.kitchen_model.get_db_connection', autospec=True)
+def test_battle_winner_selection(mock_get_db_connection, mock_update_meal_stats, battle_model, sample_meal1, sample_meal2, mocker):
+    """Test that the winner is correctly selected based on battle scores."""
+    battle_model.prep_combatant(sample_meal1)
+    battle_model.prep_combatant(sample_meal2)
 
-# def test_battle_winner_selection(battle_model, sample_meal1, sample_meal2, mocker):
-#     """Test that the winner is correctly selected based on battle scores."""
-#     battle_model.prep_combatant(sample_meal1)
-#     battle_model.prep_combatant(sample_meal2)
+    # Mock get_random to control randomness and ensure predictability
+    mocker.patch("meal_max.utils.random_utils.get_random", return_value=0.2)
+    
+    # Mock the database call in update_meal_stats to avoid checking 'deleted' status
+    mock_cursor = mock.Mock()
+    mock_get_db_connection.return_value.__enter__.return_value.cursor.return_value = mock_cursor
+    mock_cursor.fetchone.return_value = (False,)  # Simulate "not deleted" status
+    
+    # Run the battle
+    winner = battle_model.battle()
+    
+    # Check that the winner is one of the combatants
+    assert winner in [sample_meal1.meal, sample_meal2.meal], "Winner should be a valid combatant."
 
-#     # Mock get_random to control randomness
-#     mocker.patch("meal_max.utils.random_utils.get_random", return_value=0.2)
-
-#     # Run the battle
-#     winner = battle_model.battle()
-
-#     # Check that the winner is one of the combatants
-#     assert winner in [sample_meal1.meal, sample_meal2.meal]
 
 ##################################################
 # Utility Function Test Cases
@@ -120,30 +128,6 @@ def test_get_combatants(battle_model, sample_meal1):
     battle_model.prep_combatant(sample_meal1)
     combatants = battle_model.get_combatants()
     assert combatants == [sample_meal1], "Expected combatants list to contain only the prepped combatant."
-
-# def test_update_meal_stats_call_on_battle(battle_model, sample_meal1, sample_meal2, mocker):
-#     """Test that update_meal_stats is called correctly during battle for winner and loser without database access."""
-#     battle_model.prep_combatant(sample_meal1)
-#     battle_model.prep_combatant(sample_meal2)
-
-#     # Mock get_random to control randomness
-#     mocker.patch("meal_max.utils.random_utils.get_random", return_value=0.5)
-#     # Mock update_meal_stats to bypass actual database access
-#     mock_update_meal_stats = mocker.patch("meal_max.models.kitchen_model.update_meal_stats")
-
-#     # Run the battle
-#     winner_name = battle_model.battle()
-
-#     # Check that update_meal_stats was called with the expected arguments for each combatant
-#     if winner_name == sample_meal1.meal:
-#         mock_update_meal_stats.assert_any_call(sample_meal1.id, 'win')
-#         mock_update_meal_stats.assert_any_call(sample_meal2.id, 'loss')
-#     else:
-#         mock_update_meal_stats.assert_any_call(sample_meal1.id, 'loss')
-#         mock_update_meal_stats.assert_any_call(sample_meal2.id, 'win')
-
-#     # Assert that update_meal_stats was called exactly twice (once for each combatant)
-#     assert mock_update_meal_stats.call_count == 2
 
 def test_get_battle_score_with_invalid_difficulty(battle_model, sample_meal1):
     """Test calculating battle score with an invalid difficulty."""
